@@ -105,16 +105,37 @@ CREATE_DIRS=false
 
 do_upgrade_linux()
 {
+    if [[ ! -d "${BIN_DIR}" && ! -d "${SRC_DIR}" ]]; then
+        echo "Error: The destination directory ${BIN_DIR} or ${SRC_DIR} does not exist. Please create it first or use --create-dirs."
+        exit 1
+    fi
+
+    echo "Downloading and installing the latest version of Calibre for Linux..."
     wget -nv -O- https://raw.githubusercontent.com/kovidgoyal/calibre/master/setup/linux-installer.py \
         | python -c "import sys; main=lambda x,y:sys.stderr.write('Download failed\n'); \
         exec(sys.stdin.read()); main('$(pwd)', True)"
 }
 
+
 do_upgrade_mac()
 {
+    if [[ ! -d "${BIN_DIR}" ]]; then
+        echo "Error: The destination directory ${BIN_DIR} does not exist. Please create it first or use --create-dirs."
+        exit 1
+    fi
+
     echo "Downloading the latest version of Calibre for macOS..."
-    LATEST_VERSION=$(curl -s https://calibre-ebook.com/download | grep -o 'https://.*macosx.*\.dmg')
-    curl -L -o calibre-latest.dmg "${LATEST_VERSION}"
+
+    # Extract the "Alternate download location" link
+    DOWNLOAD_URL=$(curl -s https://calibre-ebook.com/download_osx | grep -o 'https://github.com/[^"]*\.dmg')
+
+    if [[ -z "$DOWNLOAD_URL" ]]; then
+        echo "Failed to find the download link for Calibre. Exiting."
+        exit 1
+    fi
+
+    echo "Downloading from $DOWNLOAD_URL..."
+    curl -L -o calibre-latest.dmg "${DOWNLOAD_URL}"
 
     echo "Mounting the .dmg file..."
     hdiutil attach calibre-latest.dmg -mountpoint /Volumes/Calibre
@@ -313,7 +334,7 @@ fi
 # Set up calibre config folder.
 # ------------------------------------------------
 
-: ${CONFIG_DIR:="$(pwd)/CalibreConfig"}
+: "${CONFIG_DIR:="$(pwd)/CalibreConfig"}"
 
 if [[ ! -d "${CONFIG_DIR}" ]]; then
     if [[ "${CREATE_DIRS}" = true ]]; then
@@ -334,9 +355,12 @@ echo "--------------------------------------------------"
 # Specify the location of your calibre library.
 # --------------------------------------------------------------
 
-: ${LIBRARY_DIRS[0]:="/path/to/first/CalibreLibrary"}
-: ${LIBRARY_DIRS[1]:="/path/to/second/CalibreLibrary"}
-: ${LIBRARY_DIRS[2]:="$(pwd)/CalibreLibrary"}
+# Initialize the array to avoid ShellCheck warning SC2153
+LIBRARY_DIRS=()
+
+: "${LIBRARY_DIRS[0]:="/path/to/first/CalibreLibrary"}"
+: "${LIBRARY_DIRS[1]:="/path/to/second/CalibreLibrary"}"
+: "${LIBRARY_DIRS[2]:="$(pwd)/CalibreLibrary"}"
 
 for LIBRARY_DIR in "${LIBRARY_DIRS[@]}"; do
     if [[ -d "${LIBRARY_DIR}" ]]; then
@@ -363,9 +387,9 @@ echo "--------------------------------------------------"
 # --------------------------------------------------------------
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    : ${BIN_DIR:="$(pwd)/calibre/calibre.app/Contents/MacOS"}
+    : "${BIN_DIR:="$(pwd)/calibre/calibre.app/Contents/MacOS"}"
 else
-    : ${BIN_DIR:="$(pwd)/calibre"}
+    : "${BIN_DIR:="$(pwd)/calibre"}"
 fi
 
 if [[ -d "${BIN_DIR}" ]]; then
@@ -387,12 +411,12 @@ echo "--------------------------------------------------"
 # --------------------------------------------------------------
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    : ${CALIBRE_TEMP_DIR:="$(mktemp -d -t CALIBRE_TEMP)"}
+    : "${CALIBRE_TEMP_DIR:="$(mktemp -d -t CALIBRE_TEMP)"}"
 else
-    : ${CALIBRE_TEMP_DIR:="/tmp/CALIBRE_TEMP_$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"}
+    : "${CALIBRE_TEMP_DIR:="/tmp/CALIBRE_TEMP_$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"}"
 fi
 
-if [[ ! -z "${CALIBRE_TEMP_DIR}" ]]; then
+if [[ -n "${CALIBRE_TEMP_DIR}" ]]; then
     export CALIBRE_TEMP_DIR
     export CALIBRE_CACHE_DIRECTORY="${CALIBRE_TEMP_DIR}/calibre_cache"
     echo "TEMPORARY FILES:    ${CALIBRE_TEMP_DIR}"
@@ -419,7 +443,7 @@ if [[ "${CALIBRE_NOCONFIRM_START}" != "1" ]]; then
     echo
     echo "Do you want to continue and start calibre? (Y/n)"
     read -r REPLY
-    REPLY=${REPLY,,}  # Convert to lowercase
+    REPLY=$(echo "$REPLY" | tr '[:upper:]' '[:lower:]')
 
     if [[ "${REPLY}" =~ ^(no|n)$ ]]; then
         echo "Exiting without starting calibre."

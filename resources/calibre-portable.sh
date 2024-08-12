@@ -50,6 +50,13 @@
 #                           specifying a list of libraries in descending order of priority.
 #
 # 01 Apr 2015  eschwartz -- Fix temp dir and permissions, migrate settings to configuration file.
+#
+# 11 Aug 2024  pidockmedia -- Added MacOS compatibility:
+#                           - macOS-specific binary path.
+#                           - Optional directory creation with --create-dirs.
+#                           - Improved user interaction with (Y/n) prompt.
+#                           - Applied shellcheck recommendations.
+#
 
 # -----------------------------------------------------
 # On exit, make sure all files are marked world-writable.
@@ -68,7 +75,7 @@ cleanup() {
     for i in "${CONFIG_DIR}" "${CALIBRE_LIBRARY_DIRECTORY}" \
              "${METADATA_DIR}" "${SRC_DIR}" "${BIN_DIR}"; do
         if [[ -d "${i}" ]]; then
-            chmod a+rwx "${i}"
+            chmod a+rwx "${i}" 2>/dev/null
         fi
     done
     rm -rf "${CALIBRE_TEMP_DIR}"
@@ -88,15 +95,36 @@ usage()
 
 		OPTIONS
 		  -u, --upgrade-install     upgrade or install the portable calibre binaries
+		  -c, --create-dirs         create missing directories if not found
 		  -h, --help                show this usage message then exit
-_EOF_
+	_EOF_
 }
 
-do_upgrade()
+# New variable to control directory creation
+CREATE_DIRS=false
+
+do_upgrade_linux()
 {
     wget -nv -O- https://raw.githubusercontent.com/kovidgoyal/calibre/master/setup/linux-installer.py \
         | python -c "import sys; main=lambda x,y:sys.stderr.write('Download failed\n'); \
         exec(sys.stdin.read()); main('$(pwd)', True)"
+}
+
+do_upgrade_mac()
+{
+    echo "Downloading the latest version of Calibre for macOS..."
+    LATEST_VERSION=$(curl -s https://calibre-ebook.com/download | grep -o 'https://.*macosx.*\.dmg')
+    curl -L -o calibre-latest.dmg "${LATEST_VERSION}"
+
+    echo "Mounting the .dmg file..."
+    hdiutil attach calibre-latest.dmg -mountpoint /Volumes/Calibre
+
+    echo "Installing Calibre..."
+    ditto /Volumes/Calibre/calibre.app "${BIN_DIR}/calibre.app"
+
+    echo "Cleaning up..."
+    hdiutil detach /Volumes/Calibre
+    rm -f calibre-latest.dmg
 }
 
 while [[ "${#}" -gt 0 ]]; do
@@ -106,11 +134,18 @@ while [[ "${#}" -gt 0 ]]; do
             exit
             ;;
         -u|--upgrade-install)
-            do_upgrade
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                do_upgrade_mac
+            else
+                do_upgrade_linux
+            fi
             exit
             ;;
+        -c|--create-dirs)
+            CREATE_DIRS=true
+            ;;
         *)
-            echo "calibre-portable.sh: unecognzed option '${1}'"
+            echo "calibre-portable.sh: unrecognized option '${1}'"
             echo "Try 'calibre-portable.sh --help' for more information."
             exit 1
     esac
@@ -122,9 +157,10 @@ done
 # ------------------------------------------------
 
 if [[ -f "$(pwd)/calibre-portable.conf" ]]; then
-    source "$(pwd)/calibre-portable.conf"
+    # shellcheck disable=SC1091
+	source "$(pwd)/calibre-portable.conf"
 else
-	cat <<- _EOF_ > $(pwd)/calibre-portable.conf
+	cat <<- "_EOF_" > "$(pwd)/calibre-portable.conf"
 		# Configuration file for calibre-portable. Generated on $(date)
 		# Settings in here will override the defaults specified in the portable launcher.
 
@@ -147,7 +183,7 @@ else
 		# -- array. The first value of LIBRARY_DIRS that is an existing directory
 		# -- will be used as the current calibre library.
 		################################################################
-
+		
 		# LIBRARY_DIRS[0]="/path/to/first/CalibreLibrary"
 		# LIBRARY_DIRS[1]="/path/to/second/CalibreLibrary"
 		# LIBRARY_DIRS[2]="\$(pwd)/CalibreLibrary"
@@ -185,25 +221,29 @@ else
 		# --       https://manual.calibre-ebook.com/develop.html#develop
 		################################################################
 
-		# SRC_DIR="$\(pwd)/CalibreSource/src"
+		# SRC_DIR="\$(pwd)/CalibreSource/src"
 
 		################################################################
-		# -- Specify location of calibre Linux binaries (optional).
+		# -- Specify location of calibre binaries (Linux or MacOS)
 		#
+		# -- Linux:
 		# -- To avoid needing calibre to be set in the search path, ensure
 		# -- that if calibre program files exists, we manually specify the
 		# -- location of the binary.
-		# -- The following test falls back to using the search path, or you
-		# -- can specifically use the search path by leaving the BIN_DIR blank.
+		# -- Example for Linux:
+		# -- BIN_DIR="\$(pwd)/calibre"
 		#
-		# -- This folder can be populated by copying the /opt/calibre folder
-		# -- from an existing installation or by installing direct to here.
+		# -- MacOS:
+		# -- Set the path to the calibre binary inside the app bundle,
+		# -- which is placed within the "calibre" directory.
+		# -- Example for macOS:
+		# -- BIN_DIR="\$(pwd)/calibre/calibre.app/Contents/MacOS"
 		#
 		# -- NOTE. Do not try and put both Windows and Linux binaries into
 		# --       the same folder as this can cause problems.
 		################################################################
 
-		# BIN_DIR="$\(pwd)/calibre"
+		# BIN_DIR="\$(pwd)/calibre"
 
 		################################################################
 		# -- Location of calibre temporary files (optional).
@@ -275,11 +315,18 @@ fi
 
 : ${CONFIG_DIR:="$(pwd)/CalibreConfig"}
 
+if [[ ! -d "${CONFIG_DIR}" ]]; then
+    if [[ "${CREATE_DIRS}" = true ]]; then
+        echo "Creating config directory: ${CONFIG_DIR}"
+        mkdir -p "${CONFIG_DIR}"
+    else
+        echo -e "\033[0;31mCONFIG FILES:       Not found\033[0m"
+    fi
+fi
+
 if [[ -d "${CONFIG_DIR}" ]]; then
     export CALIBRE_CONFIG_DIRECTORY="${CONFIG_DIR}"
     echo "CONFIG FILES:       ${CONFIG_DIR}"
-else
-    echo -e "\033[0;31mCONFIG FILES:       Not found\033[0m"
 fi
 echo "--------------------------------------------------"
 
@@ -299,43 +346,27 @@ for LIBRARY_DIR in "${LIBRARY_DIRS[@]}"; do
     fi
 done
 
-[[ -z "${CALIBRE_LIBRARY_DIRECTORY}" ]] && echo -e "\033[0;31mLIBRARY FILES:      Not found\033[0m"
+if [[ -z "${CALIBRE_LIBRARY_DIRECTORY}" ]]; then
+    if [[ "${CREATE_DIRS}" = true ]]; then
+        echo -e "\033[0;31mLIBRARY FILES:      Not found. Creating default library directory.\033[0m"
+        CALIBRE_LIBRARY_DIRECTORY="$(pwd)/CalibreLibrary"
+        mkdir -p "${CALIBRE_LIBRARY_DIRECTORY}"
+        echo "LIBRARY FILES:      ${CALIBRE_LIBRARY_DIRECTORY}"
+    else
+        echo -e "\033[0;31mLIBRARY FILES:      Not found\033[0m"
+    fi
+fi
 echo "--------------------------------------------------"
 
 # --------------------------------------------------------------
-# Specify location of metadata database (optional).
+# Specify location of calibre binaries (Linux or MacOS).
 # --------------------------------------------------------------
 
-: ${METADATA_DIR:="$(pwd)/CalibreMetadata"}
-
-if [[ -f "${METADATA_DIR}/metadata.db" && "${CALIBRE_LIBRARY_DIRECTORY}" != "${METADATA_DIR}" ]]; then
-    export CALIBRE_OVERRIDE_DATABASE_PATH="${METADATA_DIR}/metadata.db"
-    echo "DATABASE:        ${METADATA_DIR}/metadata.db"
-    echo
-    echo -e "\033[0;31m***CAUTION*** Library Switching will be disabled\033[0m"
-    echo
-    echo "--------------------------------------------------"
-fi
-
-# --------------------------------------------------------------
-# Specify location of source (optional).
-# --------------------------------------------------------------
-
-: ${SRC_DIR:="$(pwd)/CalibreSource/src"}
-
-if [[ -d "${SRC_DIR}" ]]; then
-    export CALIBRE_DEVELOP_FROM="${SRC_DIR}"
-    echo "SOURCE FILES:       ${SRC_DIR}"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    : ${BIN_DIR:="$(pwd)/calibre/calibre.app/Contents/MacOS"}
 else
-    echo "SOURCE FILES:       *** Not being Used ***"
+    : ${BIN_DIR:="$(pwd)/calibre"}
 fi
-echo "--------------------------------------------------"
-
-# --------------------------------------------------------------
-# Specify location of calibre Linux binaries (optional).
-# --------------------------------------------------------------
-
-: ${BIN_DIR:="$(pwd)/calibre"}
 
 if [[ -d "${BIN_DIR}" ]]; then
     CALIBRE="${BIN_DIR}/calibre"
@@ -355,7 +386,11 @@ echo "--------------------------------------------------"
 # Location of calibre temporary files (optional).
 # --------------------------------------------------------------
 
-: ${CALIBRE_TEMP_DIR:="/tmp/CALIBRE_TEMP_$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"}
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    : ${CALIBRE_TEMP_DIR:="$(mktemp -d -t CALIBRE_TEMP)"}
+else
+    : ${CALIBRE_TEMP_DIR:="/tmp/CALIBRE_TEMP_$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"}
+fi
 
 if [[ ! -z "${CALIBRE_TEMP_DIR}" ]]; then
     export CALIBRE_TEMP_DIR
@@ -363,8 +398,8 @@ if [[ ! -z "${CALIBRE_TEMP_DIR}" ]]; then
     echo "TEMPORARY FILES:    ${CALIBRE_TEMP_DIR}"
     echo "--------------------------------------------------"
     rm -rf "${CALIBRE_TEMP_DIR}"
-    mkdir "${CALIBRE_TEMP_DIR}"
-    mkdir "${CALIBRE_CACHE_DIRECTORY}"
+    mkdir -p "${CALIBRE_TEMP_DIR}"
+    mkdir -p "${CALIBRE_CACHE_DIRECTORY}"
 fi
 
 # --------------------------------------------------------------
@@ -382,9 +417,14 @@ fi
 
 if [[ "${CALIBRE_NOCONFIRM_START}" != "1" ]]; then
     echo
-    echo "Press CTRL-C if you do not want to continue"
-    echo "Press ENTER to continue and start calibre"
-    read DUMMY
+    echo "Do you want to continue and start calibre? (Y/n)"
+    read -r REPLY
+    REPLY=${REPLY,,}  # Convert to lowercase
+
+    if [[ "${REPLY}" =~ ^(no|n)$ ]]; then
+        echo "Exiting without starting calibre."
+        exit 0
+    fi
 fi
 
 # --------------------------------------------------------

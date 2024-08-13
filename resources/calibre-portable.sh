@@ -278,6 +278,7 @@ else
 		################################################################
 
 		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"
+        # CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)" # Example for macOS
 
 		################################################################
 		# -- Set the interface language (optional).
@@ -386,14 +387,14 @@ echo "--------------------------------------------------"
 # --------------------------------------------------------------
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
+    # Only create the top-level CalibreBin directory for macOS
+    if [[ ! -d "$(pwd)/CalibreBin" && "${CREATE_DIRS}" = true ]]; then
+        echo "Creating BIN directory: $(pwd)/CalibreBin"
+        mkdir -p "$(pwd)/CalibreBin"
+    fi
     : "${BIN_DIR:="$(pwd)/CalibreBin/calibre.app/Contents/MacOS"}"
 else
     : "${BIN_DIR:="$(pwd)/Calibre"}"
-fi
-
-if [[ ! -d "${BIN_DIR}" && "${CREATE_DIRS}" = true ]]; then
-    echo "Creating BIN directory: ${BIN_DIR}"
-    mkdir -p "${BIN_DIR}"
 fi
 
 if [[ -d "${BIN_DIR}" ]]; then

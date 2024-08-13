@@ -269,22 +269,15 @@ else
 		################################################################
 		# -- Location of calibre temporary files (optional).
 		#
-		# -- calibre creates a lot of temporary files while running.
-		# -- In theory, these are removed when calibre finishes, but
-		# -- in practice, files can be left behind (particularly if
+		# -- calibre creates a lot of temporary files while running
+		# -- In theory these are removed when calibre finishes, but
+		# -- in practice files can be left behind (particularly if
 		# -- a crash occurs). Using this option allows some
 		# -- explicit clean-up of these files.
-		# -- If not set, calibre uses the normal system TEMP location.
-		#
-		# -- Example for Linux:
-		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"
-		#
-		# -- Example for macOS:
-		# CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)"
+		# -- If not set calibre uses the normal system TEMP location
 		################################################################
 
-		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)" # Linux
-		# CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)" # macOS
+		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"
 
 		################################################################
 		# -- Set the interface language (optional).
@@ -392,13 +385,10 @@ echo "--------------------------------------------------"
 # Specify location of calibre binaries (Linux or MacOS).
 # --------------------------------------------------------------
 
-
-if [[ -z "${BIN_DIR}" ]]; then
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        BIN_DIR="$(pwd)/CalibreBin/calibre.app/Contents/MacOS"
-    else
-        BIN_DIR="$(pwd)/Calibre"
-    fi
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    : "${BIN_DIR:="$(pwd)/CalibreBin/calibre.app/Contents/MacOS"}"
+else
+    : "${BIN_DIR:="$(pwd)/Calibre"}"
 fi
 
 if [[ ! -d "${BIN_DIR}" && "${CREATE_DIRS}" = true ]]; then

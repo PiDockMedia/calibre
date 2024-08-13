@@ -58,6 +58,7 @@
 #                           - Improved user interaction with (Y/n) prompt.
 #                           - Added checks to ensure BIN_DIR or SRC_DIR exists before attempting upgrades.
 #                           - Applied shellcheck recommendations and updated default directory names for consistency.
+#                           - Introduced APP_DIR for macOS to manage calibre.app installations/upgrades.
 #
 
 # -----------------------------------------------------
@@ -75,7 +76,7 @@ cleanup() {
     fi
 
     for i in "${CONFIG_DIR}" "${CALIBRE_LIBRARY_DIRECTORY}" \
-             "${METADATA_DIR}" "${SRC_DIR}" "${BIN_DIR}"; do
+             "${METADATA_DIR}" "${SRC_DIR}" "${APP_DIR}"; do
         if [[ -d "${i}" ]]; then
             chmod a+rwx "${i}" 2>/dev/null
         fi
@@ -105,6 +106,14 @@ usage()
 # New variable to control directory creation
 CREATE_DIRS=false
 
+# Determine APP_DIR from BIN_DIR for macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    : "${BIN_DIR:="$(pwd)/CalibreBin/calibre.app/Contents/MacOS"}"
+    APP_DIR="${BIN_DIR%/calibre.app/Contents/MacOS}"
+else
+    : "${BIN_DIR:="$(pwd)/Calibre"}"
+fi
+
 do_upgrade_linux()
 {
     if [[ ! -d "${BIN_DIR}" && ! -d "${SRC_DIR}" ]]; then
@@ -120,8 +129,8 @@ do_upgrade_linux()
 
 do_upgrade_mac()
 {
-    if [[ ! -d "${BIN_DIR}" ]]; then
-        echo "Error: The destination directory ${BIN_DIR} does not exist. Please create it first or use --create-dirs."
+    if [[ ! -d "${APP_DIR}" ]]; then
+        echo "Error: The destination directory ${APP_DIR} does not exist. Please create it first or use --create-dirs."
         exit 1
     fi
 
@@ -142,11 +151,14 @@ do_upgrade_mac()
     hdiutil attach calibre-latest.dmg -mountpoint /Volumes/Calibre
 
     echo "Installing Calibre..."
-    ditto /Volumes/Calibre/calibre.app "${BIN_DIR}/calibre.app"
+    ditto /Volumes/Calibre/calibre.app "${APP_DIR}/calibre.app"
 
     echo "Cleaning up..."
     hdiutil detach /Volumes/Calibre
     rm -f calibre-latest.dmg
+
+    # Ensure BIN_DIR is set to the correct path inside the app bundle
+    BIN_DIR="${APP_DIR}/calibre.app/Contents/MacOS"
 }
 
 while [[ "${#}" -gt 0 ]]; do
@@ -259,7 +271,7 @@ else
 		# -- Set the path to the calibre binary inside the app bundle,
 		# -- which is placed within the "CalibreBin" directory.
 		#
-		# -- NOTE. Do not try and put both Windows, Linux. or macOS binaries
+		# -- NOTE. Do not try and put both Windows, Linux, or macOS binaries
 		# --       into the same folder as this can cause problems.
 		################################################################
 
@@ -278,7 +290,7 @@ else
 		################################################################
 
 		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"
-        # CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)" # Example for macOS
+		# CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)" # Example for macOS
 
 		################################################################
 		# -- Set the interface language (optional).
@@ -386,15 +398,9 @@ echo "--------------------------------------------------"
 # Specify location of calibre binaries (Linux or MacOS).
 # --------------------------------------------------------------
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # Only create the top-level CalibreBin directory for macOS
-    if [[ ! -d "$(pwd)/CalibreBin" && "${CREATE_DIRS}" = true ]]; then
-        echo "Creating BIN directory: $(pwd)/CalibreBin"
-        mkdir -p "$(pwd)/CalibreBin"
-    fi
-    : "${BIN_DIR:="$(pwd)/CalibreBin/calibre.app/Contents/MacOS"}"
-else
-    : "${BIN_DIR:="$(pwd)/Calibre"}"
+if [[ ! -d "${APP_DIR}" && "${CREATE_DIRS}" = true ]]; then
+    echo "Creating APP directory: ${APP_DIR}"
+    mkdir -p "${APP_DIR}"
 fi
 
 if [[ -d "${BIN_DIR}" ]]; then

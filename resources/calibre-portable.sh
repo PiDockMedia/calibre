@@ -22,6 +22,7 @@
 # running of a local hard disk if you want to get the level
 # of control this script file provides.
 #  - Calibre                    Location of Linux program files
+#  - CalibreBin                 Location of macOS program files
 #  - CalibreConfig              Location of configuration files
 #  - CalibreLibrary             Location of books and metadata
 #  - CalibreSource              Location of calibre source files (optional)
@@ -34,11 +35,11 @@
 # be found at:
 #       https://manual.calibre-ebook.com/customize.html#environment-variables
 #
-# NOTE: It is quite possible to have both Windows and Linux binaries on the same
+# NOTE: It is quite possible to have both Windows and Linux/macOS binaries on the same
 #       USB stick but set up to use the same calibre settings otherwise.
 #       In this case you use:
 #       - calibre-portable.bat          to run the Windows version
-#       - calibre-portable.sh           to run the Linux version
+#       - calibre-portable.sh           to run the Linux/macOS version
 #
 # CHANGE HISTORY
 # ¬¬¬¬¬¬¬¬¬¬¬¬¬¬
@@ -52,10 +53,11 @@
 # 01 Apr 2015  eschwartz -- Fix temp dir and permissions, migrate settings to configuration file.
 #
 # 11 Aug 2024  pidockmedia -- Added MacOS compatibility:
-#                           - macOS-specific binary path.
+#                           - macOS-specific binary path set to CalibreBin.
 #                           - Optional directory creation with --create-dirs.
 #                           - Improved user interaction with (Y/n) prompt.
-#                           - Applied shellcheck recommendations.
+#                           - Added checks to ensure BIN_DIR or SRC_DIR exists before attempting upgrades.
+#                           - Applied shellcheck recommendations and updated default directory names for consistency.
 #
 
 # -----------------------------------------------------
@@ -115,7 +117,6 @@ do_upgrade_linux()
         | python -c "import sys; main=lambda x,y:sys.stderr.write('Download failed\n'); \
         exec(sys.stdin.read()); main('$(pwd)', True)"
 }
-
 
 do_upgrade_mac()
 {
@@ -221,7 +222,7 @@ else
 		# -- NOTE. If you use this option, then the ability to switch
 		# --       libraries within calibre will be disabled. Therefore
 		# --       you do not want to set it if the metadata.db file
-		# --       is at the same location as the book files.
+		 #       is at the same location as the book files.
 		#
 		# --       Another point to watch is that plugins can cause problems
 		# --       as they often store absolute path information.
@@ -252,32 +253,38 @@ else
 		# -- that if calibre program files exists, we manually specify the
 		# -- location of the binary.
 		# -- Example for Linux:
-		# -- BIN_DIR="\$(pwd)/calibre"
+		# -- BIN_DIR="\$(pwd)/Calibre"
 		#
 		# -- MacOS:
 		# -- Set the path to the calibre binary inside the app bundle,
-		# -- which is placed within the "calibre" directory.
-		# -- Example for macOS:
-		# -- BIN_DIR="\$(pwd)/calibre/calibre.app/Contents/MacOS"
+		# -- which is placed within the "CalibreBin" directory.
 		#
-		# -- NOTE. Do not try and put both Windows and Linux binaries into
-		# --       the same folder as this can cause problems.
+		# -- NOTE. Do not try and put both Windows, Linux. or macOS binaries
+		# --       into the same folder as this can cause problems.
 		################################################################
 
-		# BIN_DIR="\$(pwd)/calibre"
+		# BIN_DIR="\$(pwd)/Calibre" # Example for Linux
+		# BIN_DIR="\$(pwd)/CalibreBin/calibre.app/Contents/MacOS # Example for macOS
 
 		################################################################
 		# -- Location of calibre temporary files (optional).
 		#
-		# -- calibre creates a lot of temporary files while running
-		# -- In theory these are removed when calibre finishes, but
-		# -- in practice files can be left behind (particularly if
+		# -- calibre creates a lot of temporary files while running.
+		# -- In theory, these are removed when calibre finishes, but
+		# -- in practice, files can be left behind (particularly if
 		# -- a crash occurs). Using this option allows some
 		# -- explicit clean-up of these files.
-		# -- If not set calibre uses the normal system TEMP location
+		# -- If not set, calibre uses the normal system TEMP location.
+		#
+		# -- Example for Linux:
+		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"
+		#
+		# -- Example for macOS:
+		# CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)"
 		################################################################
 
-		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)"
+		# CALIBRE_TEMP_DIR="/tmp/CALIBRE_TEMP_\$(tr -dc 'A-Za-z0-9'</dev/urandom |fold -w 7 | head -n1)" # Linux
+		# CALIBRE_TEMP_DIR="\$(mktemp -d -t CALIBRE_TEMP)" # macOS
 
 		################################################################
 		# -- Set the interface language (optional).
@@ -355,7 +362,6 @@ echo "--------------------------------------------------"
 # Specify the location of your calibre library.
 # --------------------------------------------------------------
 
-# Initialize the array to avoid ShellCheck warning SC2153
 LIBRARY_DIRS=()
 
 : "${LIBRARY_DIRS[0]:="/path/to/first/CalibreLibrary"}"
@@ -386,10 +392,18 @@ echo "--------------------------------------------------"
 # Specify location of calibre binaries (Linux or MacOS).
 # --------------------------------------------------------------
 
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    : "${BIN_DIR:="$(pwd)/calibre/calibre.app/Contents/MacOS"}"
-else
-    : "${BIN_DIR:="$(pwd)/calibre"}"
+
+if [[ -z "${BIN_DIR}" ]]; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        BIN_DIR="$(pwd)/CalibreBin/calibre.app/Contents/MacOS"
+    else
+        BIN_DIR="$(pwd)/Calibre"
+    fi
+fi
+
+if [[ ! -d "${BIN_DIR}" && "${CREATE_DIRS}" = true ]]; then
+    echo "Creating BIN directory: ${BIN_DIR}"
+    mkdir -p "${BIN_DIR}"
 fi
 
 if [[ -d "${BIN_DIR}" ]]; then

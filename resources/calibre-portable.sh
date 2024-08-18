@@ -2,6 +2,9 @@
 #                       Calibre-Portable.sh
 #                       ¬¬¬¬¬¬¬¬¬¬¬¬¬¬¬¬¬¬¬
 #
+# WARNING: If you run across this script right now it is in transition. While I have
+#		  tested it on macOS, it is not yet fully tested on Linux.
+#
 # Shell script file to start a calibre configuration on Linux
 # giving explicit control of the location of:
 #  - calibre program files
